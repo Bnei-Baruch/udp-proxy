@@ -49,6 +49,10 @@ func main() {
 				forwards = append(forwards, ip+":"+JanusPort)
 			}
 
+			if source == "trlout" {
+				forwards = append(forwards, os.Getenv("DANTE_IP")+":"+JanusPort)
+			}
+
 			go startForward(ProxyPort, forwards)
 			time.Sleep(100000000)
 		}
