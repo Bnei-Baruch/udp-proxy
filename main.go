@@ -46,11 +46,14 @@ func main() {
 			for _, s := range servers {
 				data := s.(map[string]interface{})
 				ip := data["ip"].(string)
-				forwards = append(forwards, ip+":"+JanusPort)
-			}
-
-			if source == "trlout" {
-				forwards = append(forwards, os.Getenv("DANTE_IP")+":"+JanusPort)
+				role := data["role"].(string)
+				enabled := data["enabled"].(bool)
+				if role == "proxy" && enabled {
+					forwards = append(forwards, ip+":"+JanusPort)
+				}
+				if source == "trlout" && role == "dante" && enabled {
+					forwards = append(forwards, ip+":"+JanusPort)
+				}
 			}
 
 			go startForward(ProxyPort, forwards)
