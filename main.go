@@ -66,10 +66,10 @@ func main() {
 
 func getConf(source string) (error, map[string]interface{}) {
 	response, err := http.Get(os.Getenv("JSON_DB") + source)
-	defer response.Body.Close()
 	if err != nil {
 		return err, nil
 	}
+	defer response.Body.Close()
 	var res map[string]interface{}
 	json.NewDecoder(response.Body).Decode(&res)
 	return nil, res
