@@ -39,24 +39,28 @@ func main() {
 
 		for _, v := range conf {
 			var forwards []string
-			data := v.(map[string]interface{})
-			ProxyPort := int(data["proxy_port"].(float64))
-			JanusPort := fmt.Sprint(data["janus_port"].(float64))
+			src := v.(map[string]interface{})
+			ProxyPort := int(src["proxy_port"].(float64))
+			JanusPort := fmt.Sprint(src["janus_port"].(float64))
+			SrcEnabled := src["enabled"].(bool)
 
-			for _, s := range servers {
-				data := s.(map[string]interface{})
-				ip := data["ip"].(string)
-				role := data["role"].(string)
-				enabled := data["enabled"].(bool)
-				if role == "proxy" && enabled {
-					forwards = append(forwards, ip+":"+JanusPort)
+			if SrcEnabled {
+				for _, s := range servers {
+					srv := s.(map[string]interface{})
+					ip := srv["ip"].(string)
+					role := srv["role"].(string)
+					SrvEnabled := srv["enabled"].(bool)
+					if role == "proxy" && SrvEnabled {
+						forwards = append(forwards, ip+":"+JanusPort)
+					}
+					if source == "trlout" && role == "dante" && SrvEnabled {
+						forwards = append(forwards, ip+":"+JanusPort)
+					}
 				}
-				if source == "trlout" && role == "dante" && enabled {
-					forwards = append(forwards, ip+":"+JanusPort)
-				}
+
+				go startForward(ProxyPort, forwards)
 			}
 
-			go startForward(ProxyPort, forwards)
 			time.Sleep(100000000)
 		}
 	}
