@@ -1,0 +1,12 @@
+why ports are float? 
+
+			ProxyPort := int(src["proxy_port"].(float64))
+			JanusPort := fmt.Sprint(src["janus_port"].(float64))
+			SrcEnabled := src["enabled"].(bool)
+
+
+
+https://shidur.kab.info/db/webrtc/servers
+
+
+qwad 4 ekrana = bb lki one

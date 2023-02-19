@@ -3,116 +3,125 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	log "github.com/sirupsen/logrus"
-	"gopkg.in/alecthomas/kingpin.v2"
+	"log"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"path"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 )
 
-var (
-	debug    = kingpin.Flag("debug", "Enable debug mode").Envar("DEBUG").Bool()
-	listenIP = kingpin.Flag("listen-ip", "IP to listen in").Default("0.0.0.0").Envar("LISTEN_IP").IP()
-	bodySize = kingpin.Flag("body-size", "Size of body to read").Default("4096").Envar("BODY_SIZE").Int()
-	pretty   = kingpin.Flag("pretty", "").Default("true").Envar("PRETTY").Hidden().Bool()
+const (
+	bodySize = 4096
+	listenIP = "0.0.0.0"
 )
 
+type Source struct {
+	Enabled       bool   `json:"enabled"`
+	FfmpegChannel int    `json:"ffmpeg_channel"`
+	JanusID       int    `json:"janus_id"`
+	JanusPort     int    `json:"janus_port"`
+	Language      string `json:"language"`
+	LocalPort     int    `json:"local_port"`
+	ProxyPort     int    `json:"proxy_port"`
+	Title         string `json:"title"`
+}
+
+type Sources map[string]Source
+
+type Server struct {
+	DNS      string `json:"dns"`
+	Enabled  bool   `json:"enabled"`
+	IP       string `json:"ip"`
+	Language string `json:"language"`
+	Role     string `json:"role"`
+	Title    string `json:"title"`
+}
+type Servers map[string]Server
+
 func main() {
-	err, servers := getConf("servers")
-	if err != nil {
-		fmt.Println("get conf:", err)
-	}
+	servers := getWebRTCServers()
 
-	var sources = [5]string{"video", "sadna", "sound", "trlout", "special"}
+	var sourceTypes = [5]string{"video", "sadna", "sound", "trlout", "special"}
 
-	for _, source := range sources {
-		err, conf := getConf(source)
-		if err != nil {
-			fmt.Println("get conf:", err)
-		}
+	for _, sourceType := range sourceTypes {
+		sources := getSources(sourceType)
+		fmt.Println("-------", sourceType)
 
-		fmt.Println("-------", source)
-
-		for _, v := range conf {
+		for _, source := range sources {
 			var forwards []string
-			src := v.(map[string]interface{})
-			ProxyPort := int(src["proxy_port"].(float64))
-			JanusPort := fmt.Sprint(src["janus_port"].(float64))
-			SrcEnabled := src["enabled"].(bool)
 
-			if SrcEnabled {
-				for _, s := range servers {
-					srv := s.(map[string]interface{})
-					ip := srv["ip"].(string)
-					role := srv["role"].(string)
-					SrvEnabled := srv["enabled"].(bool)
-					if role == "proxy" && SrvEnabled {
-						forwards = append(forwards, ip+":"+JanusPort)
+			if source.Enabled {
+				for _, server := range servers {
+					target := server.IP + ":" +strconv.Itoa(source.JanusPort)
+
+					if server.Role == "proxy" && server.Enabled {
+						forwards = append(forwards, target)
 					}
-					if source == "trlout" && role == "dante" && SrvEnabled {
-						forwards = append(forwards, ip+":"+JanusPort)
+					if server.Role == "dante" && sourceType == "trlout" && server.Enabled {
+						forwards = append(forwards, target)
 					}
 				}
 
-				go startForward(ProxyPort, forwards)
+				go startForward(source.ProxyPort, forwards)
 			}
 
-			time.Sleep(100000000)
+			time.Sleep(100 * time.Millisecond)
 		}
 	}
-
+	go startHttpServer()
 	WaitForExit()
 }
 
-func getConf(source string) (error, map[string]interface{}) {
-	response, err := http.Get(os.Getenv("JSON_DB") + source)
+func getWebRTCServers() Servers {
+	var webRTCServers Servers
+	jsonDBUrl := os.Getenv("JSON_DB")
+	response, err := http.Get(path.Join(jsonDBUrl, "servers"))
 	if err != nil {
-		return err, nil
+		log.Println("error getting WebRTC servers:", err)
 	}
 	defer response.Body.Close()
-	var res map[string]interface{}
-	json.NewDecoder(response.Body).Decode(&res)
-	return nil, res
+	// var res map[string]interface{}
+	json.NewDecoder(response.Body).Decode(&webRTCServers)
+	return webRTCServers
+}
+
+func getSources(sourceType string) Sources {
+	var sources Sources
+	jsonDBUrl := os.Getenv("JSON_DB")
+	response, err := http.Get(path.Join(jsonDBUrl, sourceType))
+	if err != nil {
+		log.Println("error getting WebRTC source:", err)
+	}
+	defer response.Body.Close()
+	// var res map[string]interface{}
+	json.NewDecoder(response.Body).Decode(&sources)
+	return sources
 }
 
 func startForward(listenPort int, forwards []string) {
 
 	var targets []*net.UDPConn
-	// CLI
-	kingpin.Parse()
-
-	// Log setup
-	if *debug {
-		log.SetLevel(log.DebugLevel)
-	} else {
-		log.SetLevel(log.InfoLevel)
-	}
-	if !*pretty {
-		log.SetFormatter(&log.TextFormatter{
-			DisableColors: true,
-			FullTimestamp: true,
-		})
-	}
 
 	if len(forwards) <= 0 {
 		log.Fatal("Must specify at least one forward target")
 	}
 
 	// Clients
-	for _, forward := range forwards {
+	for _, forwardAddr := range forwards {
 		// Check for port
-		if strings.Index(forward, ":") < 0 {
-			forward = fmt.Sprintf("%s:%d", forward, listenPort)
+		if !strings.Contains(forwardAddr, ":") {
+			forwardAddr = fmt.Sprintf("%s:%d", forwardAddr, listenPort)
 		}
 
 		// Resolve
-		addr, err := net.ResolveUDPAddr("udp", forward)
+		addr, err := net.ResolveUDPAddr("udp", forwardAddr)
 		if err != nil {
-			log.Fatalf("Could not ResolveUDPAddr: %s (%s)", forward, err)
+			log.Fatalf("Could not ResolveUDPAddr: %s (%s)", forwardAddr, err)
 		}
 
 		// Setup conn
@@ -128,56 +137,29 @@ func startForward(listenPort int, forwards []string) {
 	// Server
 	conn, err := net.ListenUDP("udp", &net.UDPAddr{
 		Port: listenPort,
-		IP:   *listenIP,
+		IP:   net.ParseIP(listenIP),
 	})
+
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	defer conn.Close()
 
-	// Startup status
-	log.WithFields(log.Fields{
-		"ip":   *listenIP,
-		"port": listenPort,
-	}).Infof("Server started")
-	for i, target := range targets {
-		log.WithFields(log.Fields{
-			"num":   i + 1,
-			"total": len(targets),
-			"addr":  target.RemoteAddr(),
-		}).Info("Forwarding target configured")
-	}
-
 	for {
 		// Read
-		b := make([]byte, *bodySize)
-		n, addr, err := conn.ReadFromUDP(b)
+		b := make([]byte, bodySize)
+		n, _, err := conn.ReadFromUDP(b)
 		if err != nil {
-			log.Error(err)
+			log.Println(err)
 			continue
 		}
 
-		// Log receive
-		ctxLog := log.WithFields(log.Fields{
-			"source": addr.String(),
-			"body":   string(b[:n]),
-		})
-		ctxLog.Debugf("Recieved packet")
-
-		// Proxy
 		for _, target := range targets {
 			_, err := target.Write(b[:n])
 
-			// Log proxy
-			ctxLog := ctxLog.WithFields(log.Fields{
-				"target": target.RemoteAddr(),
-			})
-
 			if err != nil {
-				ctxLog.Warn("Could not forward packet", err)
-			} else {
-				ctxLog.Debug("Wrote to target")
+				log.Println("Could not forward packet", err)
 			}
 		}
 	}
@@ -199,4 +181,14 @@ func WaitForExit() {
 	fmt.Println("awaiting signal")
 	<-done
 	fmt.Println("exiting")
+}
+
+func startHttpServer() {
+	http.HandleFunc("/healthcheck", handleSize)
+	log.Fatal(http.ListenAndServe(fmt.Sprintf("%s:%s", listenIP, "8080"), nil))
+	
+}
+
+func handleSize(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintln(w, "ok")
 }
