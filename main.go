@@ -6,9 +6,9 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
-	"path"
 	"strconv"
 	"strings"
 	"syscall"
@@ -74,7 +74,11 @@ func buildForwards(sourceType string, source Source, servers Servers) []string {
 func getEnabledServers() Servers {
 	var servers Servers
 	jsonDBUrl := os.Getenv("JSON_DB")
-	response, err := http.Get(path.Join(jsonDBUrl, "servers"))
+	u, err := url.JoinPath(jsonDBUrl, "servers")
+	if err != nil {
+		log.Println("couldn't get path", err)
+	}
+	response, err := http.Get(u)
 	if err != nil {
 		log.Println("error getting WebRTC servers:", err)
 	}
@@ -93,7 +97,11 @@ func getEnabledServers() Servers {
 func getEnabledSources(sourceType string) Sources {
 	var sources Sources
 	jsonDBUrl := os.Getenv("JSON_DB")
-	response, err := http.Get(path.Join(jsonDBUrl, sourceType))
+	u, err := url.JoinPath(jsonDBUrl, sourceType)
+	if err != nil {
+		log.Println("couldn't get path", err)
+	}
+	response, err := http.Get(u)
 	if err != nil {
 		log.Println("error getting WebRTC source:", err)
 	}
