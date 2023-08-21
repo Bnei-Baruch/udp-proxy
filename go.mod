@@ -1,3 +1,4 @@
 module github.com/Bnei-Baruch/udp-proxy
 
-go 1.18
+go 1.21
+

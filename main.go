@@ -48,17 +48,18 @@ func main() {
 
 	var sourceTypes = [5]string{"video", "sadna", "sound", "trlout", "special"}
 	for _, sourceType := range sourceTypes {
+		fmt.Println(sourceType)
 		sources := getEnabledSources(sourceType)
-		for _, source := range sources {	
+		for _, source := range sources {
 			forwards := buildForwards(sourceType, source, servers)
 			go startForward(source.ProxyPort, forwards)
+			fmt.Println("pulled", "source port: ",source.ProxyPort, "forwards to: ", forwards)
 			time.Sleep(100 * time.Millisecond)
 		}
 	}
 	go startHttpServer()
 	WaitForExit()
 }
-
 
 func buildForwards(sourceType string, source Source, servers Servers) []string {
 	var forwards []string
@@ -87,7 +88,7 @@ func getEnabledServers() Servers {
 
 	// remove disabled servers
 	for k, v := range servers {
-		if v.Enabled {
+		if !v.Enabled {
 			delete(servers, k)
 		}
 	}
@@ -110,25 +111,12 @@ func getEnabledSources(sourceType string) Sources {
 	json.NewDecoder(response.Body).Decode(&sources)
 	// remove disabled servers
 	for k, v := range sources {
-		if v.Enabled {
+		if !v.Enabled {
 			delete(sources, k)
 		}
 	}
 	return sources
 }
-
-// func getConf[T any](confType string) T {
-// 	var confObjects T
-// 	jsonDBUrl := os.Getenv("JSON_DB")
-// 	response, err := http.Get(path.Join(jsonDBUrl, confType))
-// 	if err != nil {
-// 		log.Println("error getting conf:", err)
-// 	}
-// 	defer response.Body.Close()
-// 	// var res map[string]interface{}
-// 	json.NewDecoder(response.Body).Decode(&confObjects)
-// 	return confObjects
-// }
 
 func startForward(listenPort int, forwards []string) {
 
@@ -212,7 +200,7 @@ func WaitForExit() {
 
 func startHttpServer() {
 	http.HandleFunc("/healthcheck", handleSize)
-	log.Fatal(http.ListenAndServe(fmt.Sprintf("%s:%s", listenIP, "8080"), nil))
+	log.Fatal(http.ListenAndServe(fmt.Sprintf("%s:%s", listenIP, "8899"), nil))
 
 }
 
